@@ -75,8 +75,7 @@ impl Agent {
 
             let mut tool_calls: HashMap<u32, ToolCallAcc> = HashMap::new();
             let mut text_messages: HashMap<u32, TextMessageAcc> = HashMap::new();
-            let mut assistant_messages: Vec<AssistantContent> = vec![];
-            let mut messages_to_process: Vec<Message> = vec![];
+            let mut generated_messages: Vec<Message> = vec![];
             let mut stdin = BufReader::new(io::stdin());
 
             while let Some(event) = event_source.next().await {
@@ -121,7 +120,9 @@ impl Agent {
                             let data: ContentBlockStop = serde_json::from_str(&msg.data).unwrap();
                             if text_messages.contains_key(&data.index) {
                                 let text = text_messages.get(&data.index).unwrap().text.clone();
-                                assistant_messages.push(AssistantContent::Text { text });
+                                generated_messages.push(Message::Assistant {
+                                    content: vec![AssistantContent::Text { text }],
+                                });
                             } else if tool_calls.contains_key(&data.index) {
                                 let tool_call = tool_calls.get(&data.index).unwrap();
 
@@ -134,16 +135,13 @@ impl Agent {
                                 println!("(y/n)?");
                                 let mut input = String::new();
                                 stdin.read_line(&mut input).await.unwrap();
-
-                                assistant_messages.push(AssistantContent::ToolUse {
-                                    id: tool_call.id.clone(),
-                                    name: tool_call.name.clone(),
-                                    input: tool_args.clone(),
+                                generated_messages.push(Message::Assistant {
+                                    content: vec![AssistantContent::ToolUse {
+                                        id: tool_call.id.clone(),
+                                        name: tool_call.name.clone(),
+                                        input: tool_args.clone(),
+                                    }],
                                 });
-                                messages_to_process.push(Message::Assistant {
-                                    content: assistant_messages,
-                                });
-                                assistant_messages = vec![];
                                 if input.trim().to_lowercase() == "y" {
                                     let mut child = Command::new("sh")
                                         .arg("-c")
@@ -195,7 +193,7 @@ impl Agent {
                                         }
                                     }
 
-                                    messages_to_process.push(Message::User {
+                                    generated_messages.push(Message::User {
                                         content: vec![UserContent::ToolResult {
                                             tool_use_id: tool_call.id.clone(),
                                             content: captured_output,
@@ -205,7 +203,7 @@ impl Agent {
                                     println!("Enter rejection reason:");
                                     let mut reason = String::new();
                                     stdin.read_line(&mut reason).await.unwrap();
-                                    messages_to_process.push(Message::User {
+                                    generated_messages.push(Message::User {
                                         content: vec![UserContent::ToolResult {
                                             tool_use_id: tool_call.id.clone(),
                                             content: format!(
@@ -223,7 +221,10 @@ impl Agent {
                     }
                 }
             }
-            self.messages.extend(messages_to_process);
+            self.messages.extend(generated_messages);
+            if tool_calls.len() == 0 {
+                break;
+            }
         }
     }
 }

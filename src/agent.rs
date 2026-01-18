@@ -41,7 +41,7 @@ impl Agent {
     }
 
     pub async fn run(&mut self, messages: Vec<Message>) {
-        let system_prompt: &str = "You are Boosty, a helpful command line assistant. You help people accomplish programming tasks and learn new things.";
+        let system_prompt: &str = "You are Booster, a helpful command line assistant. You help people accomplish programming tasks and learn new things.";
         let client = Client::new();
 
         self.messages.extend(messages);
@@ -143,60 +143,10 @@ impl Agent {
                                     }],
                                 });
                                 if input.trim().to_lowercase() == "y" {
-                                    let mut child = Command::new("sh")
-                                        .arg("-c")
-                                        .arg(&tool_args.command)
-                                        .stdout(Stdio::piped())
-                                        .stderr(Stdio::piped())
-                                        .spawn()
-                                        .expect("Failed to execute command");
-
-                                    let stdout =
-                                        child.stdout.take().expect("Failed to capture stdout");
-                                    let stderr =
-                                        child.stderr.take().expect("Failed to capture stderr");
-
-                                    let mut stdout_reader = BufReader::new(stdout).lines();
-                                    let mut stderr_reader = BufReader::new(stderr).lines();
-
-                                    let mut captured_output = String::new();
-
-                                    loop {
-                                        tokio::select! {
-                                            line = stdout_reader.next_line() => {
-                                                match line {
-                                                    Ok(Some(line)) => {
-                                                        println!("{}", line);
-                                                        captured_output.push_str(&line);
-                                                        captured_output.push('\n');
-                                                    }
-                                                    Ok(None) => break,
-                                                    Err(e) => {
-                                                        eprintln!("Error reading stdout: {}", e);
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                            line = stderr_reader.next_line() => {
-                                                match line {
-                                                    Ok(Some(line)) => {
-                                                        eprintln!("{}", line);
-                                                        captured_output.push_str(&line);
-                                                        captured_output.push('\n');
-                                                    }
-                                                    Ok(None) => {}
-                                                    Err(e) => {
-                                                        eprintln!("Error reading stderr: {}", e);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
                                     generated_messages.push(Message::User {
                                         content: vec![UserContent::ToolResult {
                                             tool_use_id: tool_call.id.clone(),
-                                            content: captured_output,
+                                            content: self.execute_command(tool_args.command).await,
                                         }],
                                     });
                                 } else {
@@ -226,5 +176,56 @@ impl Agent {
                 break;
             }
         }
+    }
+
+    async fn execute_command(&self, command: String) -> String {
+        let mut child = Command::new("sh")
+            .arg("-c")
+            .arg(&command)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to execute command");
+
+        let stdout = child.stdout.take().expect("Failed to capture stdout");
+        let stderr = child.stderr.take().expect("Failed to capture stderr");
+        let mut stdout_reader = BufReader::new(stdout).lines();
+        let mut stderr_reader = BufReader::new(stderr).lines();
+
+        let mut command_output = String::new();
+
+        loop {
+            tokio::select! {
+                line = stdout_reader.next_line() => {
+                    match line {
+                        Ok(Some(line)) => {
+                            println!("{}", line);
+                            command_output.push_str(&line);
+                            command_output.push('\n');
+                        }
+                        Ok(None) => break,
+                        Err(e) => {
+                            eprintln!("Error reading stdout: {}", e);
+                            break;
+                        }
+                    }
+                }
+                line = stderr_reader.next_line() => {
+                    match line {
+                        Ok(Some(line)) => {
+                            eprintln!("{}", line);
+                            command_output.push_str(&line);
+                            command_output.push('\n');
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            eprintln!("Error reading stderr: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+
+        return command_output;
     }
 }

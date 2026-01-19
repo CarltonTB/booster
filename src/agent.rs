@@ -1,6 +1,6 @@
 use crate::types::{
-    AssistantContent, BashToolArgs, ContentBlock, ContentBlockDelta, ContentBlockStart,
-    ContentBlockStop, Delta, Message, TextMessageAcc, ToolCallAcc, UserContent,
+    AgentPermissions, AssistantContent, BashToolArgs, ContentBlock, ContentBlockDelta,
+    ContentBlockStart, ContentBlockStop, Delta, Message, TextMessage, ToolCall, UserContent,
 };
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -17,14 +17,21 @@ pub struct Agent {
     model: String,
     messages: Vec<Message>,
     api_key: String,
+    permissions: AgentPermissions,
 }
 
 impl Agent {
-    pub fn new(model: String, messages: Vec<Message>, api_key: String) -> Agent {
+    pub fn new(
+        model: String,
+        messages: Vec<Message>,
+        api_key: String,
+        permissions: AgentPermissions,
+    ) -> Agent {
         Agent {
             model,
             messages,
             api_key,
+            permissions,
         }
     }
 
@@ -73,10 +80,9 @@ impl Agent {
                 Err(err) => panic!("{}", err),
             };
 
-            let mut tool_calls: HashMap<u32, ToolCallAcc> = HashMap::new();
-            let mut text_messages: HashMap<u32, TextMessageAcc> = HashMap::new();
+            let mut tool_calls: HashMap<u32, ToolCall> = HashMap::new();
+            let mut text_messages: HashMap<u32, TextMessage> = HashMap::new();
             let mut generated_messages: Vec<Message> = vec![];
-            let mut stdin = BufReader::new(io::stdin());
 
             while let Some(event) = event_source.next().await {
                 match event {
@@ -87,17 +93,10 @@ impl Agent {
                             match data.content_block {
                                 ContentBlock::TextStart { text } => {
                                     print!("{}", text);
-                                    text_messages.insert(data.index, TextMessageAcc { text });
+                                    text_messages.insert(data.index, TextMessage { text });
                                 }
                                 ContentBlock::ToolUseStart { id, name } => {
-                                    tool_calls.insert(
-                                        data.index,
-                                        ToolCallAcc {
-                                            id,
-                                            name,
-                                            args: String::from(""),
-                                        },
-                                    );
+                                    tool_calls.insert(data.index, ToolCall::new(id, name));
                                 }
                             }
                             std::io::stdout().flush().unwrap()
@@ -112,7 +111,7 @@ impl Agent {
                                 }
                                 Delta::InputJsonDelta { partial_json } => {
                                     let cur_tool_call = tool_calls.get_mut(&data.index).unwrap();
-                                    cur_tool_call.args.push_str(&partial_json);
+                                    cur_tool_call.args_json.push_str(&partial_json);
                                 }
                             }
                             std::io::stdout().flush().unwrap();
@@ -124,44 +123,56 @@ impl Agent {
                                     content: vec![AssistantContent::Text { text }],
                                 });
                             } else if tool_calls.contains_key(&data.index) {
-                                let tool_call = tool_calls.get(&data.index).unwrap();
+                                let tool_call = tool_calls.get_mut(&data.index).unwrap();
 
-                                // Parse tool args and execute tool
-                                let tool_args: BashToolArgs =
-                                    serde_json::from_str(&tool_call.args).unwrap();
+                                tool_call.args_parsed =
+                                    match serde_json::from_str(&tool_call.args_json) {
+                                        Ok(args) => args,
+                                        Err(_) => None,
+                                    };
 
-                                println!("Requesting to run:");
-                                println!("{}", tool_args.command);
-                                println!("(y/n)?");
-                                let mut input = String::new();
-                                stdin.read_line(&mut input).await.unwrap();
-                                generated_messages.push(Message::Assistant {
-                                    content: vec![AssistantContent::ToolUse {
-                                        id: tool_call.id.clone(),
-                                        name: tool_call.name.clone(),
-                                        input: tool_args.clone(),
-                                    }],
-                                });
-                                if input.trim().to_lowercase() == "y" {
-                                    generated_messages.push(Message::User {
-                                        content: vec![UserContent::ToolResult {
-                                            tool_use_id: tool_call.id.clone(),
-                                            content: self.execute_command(tool_args.command).await,
-                                        }],
-                                    });
-                                } else {
-                                    println!("Enter rejection reason:");
-                                    let mut reason = String::new();
-                                    stdin.read_line(&mut reason).await.unwrap();
-                                    generated_messages.push(Message::User {
-                                        content: vec![UserContent::ToolResult {
-                                            tool_use_id: tool_call.id.clone(),
-                                            content: format!(
-                                                "User rejected tool call with reason: {}",
-                                                reason
-                                            ),
-                                        }],
-                                    });
+                                match &tool_call.args_parsed {
+                                    Some(args) => {
+                                        generated_messages.push(Message::Assistant {
+                                            content: vec![AssistantContent::ToolUse {
+                                                id: tool_call.id.clone(),
+                                                name: tool_call.name.clone(),
+                                                input: args.clone(),
+                                            }],
+                                        });
+                                        match self.permissions {
+                                            AgentPermissions::ConfirmAll => generated_messages
+                                                .extend(
+                                                    self.request_confirmation(tool_call, &args)
+                                                        .await,
+                                                ),
+                                            AgentPermissions::AllowAll => {
+                                                generated_messages.push(Message::User {
+                                                    content: vec![UserContent::ToolResult {
+                                                        tool_use_id: tool_call.id.clone(),
+                                                        content: self
+                                                            .execute_command(&args.command)
+                                                            .await,
+                                                    }],
+                                                });
+                                            }
+                                        }
+                                    }
+                                    None => {
+                                        generated_messages.push(Message::Assistant {
+                                            content: vec![AssistantContent::InvalidToolUse {
+                                                id: tool_call.id.clone(),
+                                                name: tool_call.name.clone(),
+                                                input: tool_call.args_json.clone(),
+                                            }],
+                                        });
+                                        generated_messages.push(Message::User {
+                                            content: vec![UserContent::ToolResult {
+                                                tool_use_id: tool_call.id.clone(),
+                                                content: String::from("Invalid tool arguments."),
+                                            }],
+                                        });
+                                    }
                                 }
                             }
                         }
@@ -178,10 +189,10 @@ impl Agent {
         }
     }
 
-    async fn execute_command(&self, command: String) -> String {
+    async fn execute_command(&self, command: &str) -> String {
         let mut child = Command::new("sh")
             .arg("-c")
-            .arg(&command)
+            .arg(command)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -227,5 +238,41 @@ impl Agent {
         }
 
         return command_output;
+    }
+
+    async fn request_confirmation(
+        &self,
+        tool_call: &ToolCall,
+        args: &BashToolArgs,
+    ) -> Vec<Message> {
+        println!("Requesting to run:");
+        println!("{}", args.command);
+        println!("(y/n)?");
+
+        let mut new_messages: Vec<Message> = vec![];
+        let mut input = String::new();
+        let mut stdin = BufReader::new(io::stdin());
+        stdin.read_line(&mut input).await.unwrap();
+
+        if input.trim().to_lowercase() == "y" {
+            new_messages.push(Message::User {
+                content: vec![UserContent::ToolResult {
+                    tool_use_id: tool_call.id.clone(),
+                    content: self.execute_command(&args.command).await,
+                }],
+            });
+        } else {
+            println!("Enter rejection reason:");
+            let mut reason = String::new();
+            stdin.read_line(&mut reason).await.unwrap();
+            new_messages.push(Message::User {
+                content: vec![UserContent::ToolResult {
+                    tool_use_id: tool_call.id.clone(),
+                    content: format!("User rejected tool call with reason: {}", reason),
+                }],
+            });
+        }
+
+        new_messages
     }
 }

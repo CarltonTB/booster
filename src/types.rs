@@ -37,15 +37,28 @@ pub enum Delta {
     InputJsonDelta { partial_json: String },
 }
 
-// Helpers
+// Tools
 
-pub struct ToolCallAcc {
+pub struct ToolCall {
     pub id: String,
     pub name: String,
-    pub args: String,
+    // accumulates the arguments as a json string
+    pub args_json: String,
+    pub args_parsed: Option<BashToolArgs>,
 }
 
-pub struct TextMessageAcc {
+impl ToolCall {
+    pub fn new(id: String, name: String) -> ToolCall {
+        ToolCall {
+            id,
+            name,
+            args_json: String::new(),
+            args_parsed: None,
+        }
+    }
+}
+
+pub struct TextMessage {
     pub text: String,
 }
 
@@ -86,4 +99,15 @@ pub enum AssistantContent {
         name: String,
         input: BashToolArgs,
     },
+    InvalidToolUse {
+        id: String,
+        name: String,
+        input: String,
+    },
+}
+
+// Permissions
+pub enum AgentPermissions {
+    AllowAll,
+    ConfirmAll,
 }

@@ -50,7 +50,7 @@ impl Agent {
     }
 
     pub async fn run(&mut self, messages: Vec<Message>) {
-        let system_prompt: &str = "You are Booster, a helpful command line assistant. You help people accomplish programming tasks and learn new things.";
+        let system_prompt: &str = "You are Booster, a helpful command line assistant. You help people accomplish programming tasks and learn new things. Your responses are displayed in a terminal, so always use plain text. Do not use markdown formatting like headers (#), bold (**), backticks for code blocks, or bullet points (* or -). Use simple indentation and spacing for structure.";
         let client = Client::new();
 
         self.messages.extend(messages);
@@ -58,15 +58,9 @@ impl Agent {
 
         while num_processed < self.messages.len() {
             num_processed = self.messages.len();
-            let body = json!({
+            let mut body = json!({
                 "model":self.model,
                 "max_tokens": 16384,
-                "thinking": {
-                    "type": "adaptive"
-                },
-                "output_config": {
-                    "effort": "low"
-                },
                 "tools": [
                     {
                         "type": "bash_20250124",
@@ -131,6 +125,15 @@ impl Agent {
                 "system": system_prompt,
                 "messages": &self.messages
             });
+
+            // Sonnet 4.6 and Opus 4.6 support adaptive thinking with effort.
+            // Haiku 4.5 uses manual thinking with budget_tokens.
+            if self.model.contains("sonnet-4-6") || self.model.contains("opus-4-6") {
+                body["thinking"] = json!({"type": "adaptive"});
+                body["output_config"] = json!({"effort": "low"});
+            } else if self.model.contains("haiku-4-5") {
+                body["thinking"] = json!({"type": "enabled", "budget_tokens": 1024});
+            }
 
             let request = client
                 .post("https://api.anthropic.com/v1/messages")

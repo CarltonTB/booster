@@ -2,6 +2,14 @@
 
 Booster is a minimal terminal agent focused on speed, simplicity, and developer enjoyment.
 
+## Installation
+
+With [Rust](https://rustup.rs/) installed:
+
+```sh
+cargo install --git https://github.com/CarltonTB/booster.git
+```
+
 ## Setup
 
 Booster requires an Anthropic API key to function. Set the following environment variable before running the utility:

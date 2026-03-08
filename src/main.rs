@@ -19,6 +19,22 @@ struct Args {
 
     #[arg(short, long)]
     yolo: bool,
+
+    /// Model to use: haiku, sonnet, or opus
+    #[arg(short, long, default_value = "sonnet")]
+    model: String,
+}
+
+fn resolve_model(name: &str) -> (String, String) {
+    match name.to_lowercase().as_str() {
+        "haiku" => (String::from("claude-haiku-4-5"), String::from("Haiku 4.5")),
+        "sonnet" => (String::from("claude-sonnet-4-6"), String::from("Sonnet 4.6")),
+        "opus" => (String::from("claude-opus-4-6"), String::from("Opus 4.6")),
+        other => {
+            eprintln!("Unknown model '{}'. Valid options: haiku, sonnet, opus", other);
+            std::process::exit(1);
+        }
+    }
 }
 
 #[tokio::main]
@@ -43,8 +59,9 @@ async fn main() {
             let messages = vec![Message::User {
                 content: vec![UserContent::Text { text: prompt }],
             }];
+            let (model, _) = resolve_model(&args.model);
             let mut agent = Agent::new(
-                String::from("claude-sonnet-4-6"),
+                model,
                 vec![],
                 api_key,
                 permissions,
@@ -52,9 +69,37 @@ async fn main() {
             agent.run(messages).await;
         }
         None => {
+            let (model, display_name) = resolve_model(&args.model);
+            println!(
+                r#"
+        *
+       / \
+      / | \
+     /  |  \
+    /___|___\
+    |   B   |
+    |   O   |
+    |   O   |
+    |   S   |
+    |   T   |
+   /|   E   |\
+  / |   R   | \
+ /  |___|___|  \
+/   |   |   |   \
+\   |   |   |   /
+ \  \  /|\  /  /
+  \  \/ | \/  /
+   \    |    /
+       /|\
+      / | \
+
+    {}
+"#,
+                display_name
+            );
             // Interactive mode
             let mut agent = Agent::new(
-                String::from("claude-sonnet-4-6"),
+                model,
                 vec![],
                 api_key,
                 permissions,

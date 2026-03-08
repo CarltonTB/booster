@@ -91,11 +91,17 @@ pub struct EditFileToolArgs {
     pub new_string: String,
 }
 
+#[derive(Clone, Deserialize)]
+pub struct ReadFileToolArgs {
+    pub file_path: String,
+}
+
 #[derive(Clone)]
 pub enum ToolArgs {
     Bash(BashToolArgs),
     WriteFile(WriteFileToolArgs),
     EditFile(EditFileToolArgs),
+    ReadFile(ReadFileToolArgs),
 }
 
 // Messages

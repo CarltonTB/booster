@@ -1,8 +1,8 @@
 use crate::streaming::{TextStreamer, ToolArgStreamer, smooth_printer};
 use crate::types::{
     AgentPermissions, AssistantContent, ContentBlock, ContentBlockDelta, ContentBlockStart,
-    ContentBlockStop, Delta, EditFileToolArgs, Message, TextMessage, ThinkingMessage, ToolArgs,
-    ToolCall, UserContent, WriteFileToolArgs,
+    ContentBlockStop, Delta, EditFileToolArgs, Message, ReadFileToolArgs, TextMessage,
+    ThinkingMessage, ToolArgs, ToolCall, UserContent, WriteFileToolArgs,
 };
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -111,6 +111,20 @@ impl Agent {
                             },
                             "required": ["file_path", "old_string", "new_string"]
                         }
+                    },
+                    {
+                        "name": "read_file",
+                        "description": "Read the contents of a file and return them.",
+                        "input_schema": {
+                            "type": "object",
+                            "properties": {
+                                "file_path": {
+                                    "type": "string",
+                                    "description": "The path to the file to read"
+                                }
+                            },
+                            "required": ["file_path"]
+                        }
                     }
                 ],
                 "stream": true,
@@ -185,6 +199,7 @@ impl Agent {
                                         "edit_file" => {
                                             vec!["file_path", "old_string", "new_string"]
                                         }
+                                        "read_file" => vec!["file_path"],
                                         _ => vec![],
                                     };
                                     let (streamer, rx) = ToolArgStreamer::new(display_keys);
@@ -328,6 +343,9 @@ impl Agent {
             "edit_file" => serde_json::from_str(&tool_call.args_json)
                 .ok()
                 .map(ToolArgs::EditFile),
+            "read_file" => serde_json::from_str(&tool_call.args_json)
+                .ok()
+                .map(ToolArgs::ReadFile),
             _ => None,
         }
     }
@@ -337,6 +355,7 @@ impl Agent {
             ToolArgs::Bash(bash_args) => self.execute_command(&bash_args.command).await,
             ToolArgs::WriteFile(write_args) => self.execute_write_file(write_args),
             ToolArgs::EditFile(edit_args) => self.execute_edit_file(edit_args),
+            ToolArgs::ReadFile(read_args) => self.execute_read_file(read_args),
         }
     }
 
@@ -373,6 +392,24 @@ impl Agent {
         match std::fs::write(&args.file_path, new_content) {
             Ok(_) => format!("Successfully edited {}", args.file_path),
             Err(e) => format!("Error writing file: {}", e),
+        }
+    }
+
+    fn execute_read_file(&self, args: &ReadFileToolArgs) -> String {
+        const MAX_FILE_SIZE: usize = 100_000;
+        match std::fs::read_to_string(&args.file_path) {
+            Ok(content) => {
+                if content.len() > MAX_FILE_SIZE {
+                    format!(
+                        "Error: file is too large ({} characters, max {}). Use the bash tool to read a smaller section with head, tail, or sed.",
+                        content.len(),
+                        MAX_FILE_SIZE
+                    )
+                } else {
+                    content
+                }
+            }
+            Err(e) => format!("Error reading file: {}", e),
         }
     }
 
@@ -432,9 +469,10 @@ impl Agent {
             ToolArgs::Bash(bash_args) => format!("Run command: {}", bash_args.command),
             ToolArgs::WriteFile(write_args) => format!("Write file: {}", write_args.file_path),
             ToolArgs::EditFile(edit_args) => format!("Edit file: {}", edit_args.file_path),
+            ToolArgs::ReadFile(read_args) => format!("Read file: {}", read_args.file_path),
         };
 
-        println!("{} (y/n)?", description);
+        println!("{}\n(y/n)?", description);
 
         let mut input = String::new();
         let mut stdin = BufReader::new(io::stdin());

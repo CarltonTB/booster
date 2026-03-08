@@ -1,10 +1,10 @@
 use clap::Parser;
-
-use std::io::Write;
-use tokio::io::{self, AsyncBufReadExt, BufReader};
+use rustyline::DefaultEditor;
 
 mod agent;
 use agent::Agent;
+
+mod streaming;
 
 mod types;
 use types::Message;
@@ -23,6 +23,12 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
+    tokio::spawn(async {
+        tokio::signal::ctrl_c().await.ok();
+        println!();
+        std::process::exit(0);
+    });
+
     let api_key = std::env::var("ANTHROPIC_API_KEY").expect("ANTHROPIC_API_KEY not set");
 
     let args = Args::parse();
@@ -38,7 +44,7 @@ async fn main() {
                 content: vec![UserContent::Text { text: prompt }],
             }];
             let mut agent = Agent::new(
-                String::from("claude-haiku-4-5"),
+                String::from("claude-sonnet-4-6"),
                 vec![],
                 api_key,
                 permissions,
@@ -48,18 +54,19 @@ async fn main() {
         None => {
             // Interactive mode
             let mut agent = Agent::new(
-                String::from("claude-haiku-4-5"),
+                String::from("claude-sonnet-4-6"),
                 vec![],
                 api_key,
                 permissions,
             );
+            let mut rl = DefaultEditor::new().expect("Failed to initialize line editor");
             loop {
                 println!();
-                print!("> ");
-                std::io::stdout().flush().unwrap();
-                let mut stdin = BufReader::new(io::stdin());
-                let mut input = String::new();
-                stdin.read_line(&mut input).await.unwrap();
+                let input = match rl.readline("> ") {
+                    Ok(line) => line,
+                    Err(_) => break,
+                };
+                rl.add_history_entry(&input).ok();
                 let messages = vec![Message::User {
                     content: vec![UserContent::Text { text: input }],
                 }];

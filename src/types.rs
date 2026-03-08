@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 pub enum ContentBlock {
     #[serde(rename = "text")]
     TextStart { text: String },
+    #[serde(rename = "thinking")]
+    ThinkingStart { thinking: String },
     #[serde(rename = "tool_use")]
     ToolUseStart { id: String, name: String },
 }
@@ -33,6 +35,10 @@ pub struct ContentBlockStop {
 pub enum Delta {
     #[serde(rename = "text_delta")]
     TextDelta { text: String },
+    #[serde(rename = "thinking_delta")]
+    ThinkingDelta { thinking: String },
+    #[serde(rename = "signature_delta")]
+    SignatureDelta { signature: String },
     #[serde(rename = "input_json_delta")]
     InputJsonDelta { partial_json: String },
 }
@@ -44,7 +50,7 @@ pub struct ToolCall {
     pub name: String,
     // accumulates the arguments as a json string
     pub args_json: String,
-    pub args_parsed: Option<BashToolArgs>,
+    pub args_parsed: Option<ToolArgs>,
 }
 
 impl ToolCall {
@@ -62,9 +68,34 @@ pub struct TextMessage {
     pub text: String,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+pub struct ThinkingMessage {
+    pub thinking: String,
+    pub signature: String,
+}
+
+#[derive(Clone, Deserialize)]
 pub struct BashToolArgs {
     pub command: String,
+}
+
+#[derive(Clone, Deserialize)]
+pub struct WriteFileToolArgs {
+    pub file_path: String,
+    pub content: String,
+}
+
+#[derive(Clone, Deserialize)]
+pub struct EditFileToolArgs {
+    pub file_path: String,
+    pub old_string: String,
+    pub new_string: String,
+}
+
+#[derive(Clone)]
+pub enum ToolArgs {
+    Bash(BashToolArgs),
+    WriteFile(WriteFileToolArgs),
+    EditFile(EditFileToolArgs),
 }
 
 // Messages
@@ -94,10 +125,14 @@ pub enum AssistantContent {
     Text {
         text: String,
     },
+    Thinking {
+        thinking: String,
+        signature: String,
+    },
     ToolUse {
         id: String,
         name: String,
-        input: BashToolArgs,
+        input: serde_json::Value,
     },
     InvalidToolUse {
         id: String,

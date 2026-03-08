@@ -4,7 +4,7 @@ Booster is a minimal terminal agent focused on speed, simplicity, and developer 
 
 ## Setup
 
-Booster requires an [Anthropic API key](https://console.anthropic.com/) to function. Set the following environment variable before running the utility:
+Booster requires an Anthropic API key to function. Set the following environment variable before running the utility:
 
 ```sh
 export ANTHROPIC_API_KEY=your_api_key_here

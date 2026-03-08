@@ -1,6 +1,6 @@
 # Booster 
 
-Booster is a minimal terminal agent focused on speed, simplicity, and developer enjoyment.
+Booster is a minimal CLI agent focused on speed, simplicity, and developer enjoyment.
 
 ## Installation
 
@@ -12,17 +12,14 @@ cargo install --git https://github.com/CarltonTB/booster.git
 
 ## Setup
 
-Booster requires an Anthropic API key to function. Set the following environment variable before running the utility:
+Booster requires an Anthropic API key. Set the following environment variable before running it:
 
 ```sh
 export ANTHROPIC_API_KEY=your_api_key_here
 ```
 
-You can also add this to your shell profile (e.g. `~/.bashrc`, `~/.zshrc`) to make it permanent:
+## Running It
 
 ```sh
-echo 'export ANTHROPIC_API_KEY=your_api_key_here' >> ~/.zshrc
+booster
 ```
-
-Booster will exit with an error if `ANTHROPIC_API_KEY` is not set.
-

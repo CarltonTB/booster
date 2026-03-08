@@ -39,11 +39,11 @@ fn resolve_model(name: &str) -> (String, String) {
 
 #[tokio::main]
 async fn main() {
-    tokio::spawn(async {
-        tokio::signal::ctrl_c().await.ok();
+    ctrlc::set_handler(|| {
         println!();
         std::process::exit(0);
-    });
+    })
+    .expect("Failed to set Ctrl+C handler");
 
     let api_key = std::env::var("ANTHROPIC_API_KEY").expect("ANTHROPIC_API_KEY not set");
 

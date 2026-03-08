@@ -209,7 +209,7 @@ impl Agent {
                                     tool_streamers.insert(data.index, streamer);
                                     let handle = tokio::spawn(smooth_printer(
                                         rx,
-                                        Duration::from_millis(20),
+                                        Duration::from_millis(5),
                                     ));
                                     printer_handles.insert(data.index, handle);
                                     tool_calls.insert(data.index, ToolCall::new(id, name));
